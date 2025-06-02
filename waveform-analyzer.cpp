@@ -19,7 +19,7 @@
  */
 
 /*
- * This is pluggin for RTXI 2.0 for online waveform analysis 
+ * This is a pluggin for RTXI 2.0 for online waveform analysis 
  */
 
 #include "waveform-analyzer.h"
@@ -33,13 +33,26 @@ createRTXIPlugin(void)
 }
 
 static DefaultGUIModel::variable_t vars[] = {
-  {
-    "Waveform analyzer", "Analyze spike waveform from an input signal",
-    DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,
-  },
-  {
-    "A State", "Tooltip description", DefaultGUIModel::STATE,
-  },
+  // INPUT
+  {"Living neuron", "Signal input to analize", DefaultGUIModel::INPUT,},
+
+  // PARAMETER
+  {"Firing threshold (V)", "Threshold to declare spike beggining", DefaultGUIModel::PARAMETER,},
+  {"Window time (ms)", "Time around peak to calculate duration", DefaultGUIModel::PARAMETER,},
+  {"N Points Filter", "Number of points for the filter", DefaultGUIModel::PARAMETER,},
+
+  //OUTPUT
+  {"Filtered signal", "Filter", DefaultGUIModel::OUTPUT,},
+  {"Amplitude", "Calculated threshold", DefaultGUIModel::OUTPUT,},
+  {"Duration", "Calculated threshold", DefaultGUIModel::OUTPUT,},
+  {"Depol. slope", "Calculated threshold", DefaultGUIModel::OUTPUT,},
+  {"Repol. slope", "Calculated threshold", DefaultGUIModel::OUTPUT,},
+
+  //STATE
+  {"Amplitude", "Calculated threshold", DefaultGUIModel::STATE,},
+  {"Duration", "Calculated threshold", DefaultGUIModel::STATE,},
+  {"Depol. slope", "Calculated threshold", DefaultGUIModel::STATE,},
+  {"Repol. slope", "Calculated threshold", DefaultGUIModel::STATE,},
 };
 
 static size_t num_vars = sizeof(vars) / sizeof(DefaultGUIModel::variable_t);
@@ -47,7 +60,7 @@ static size_t num_vars = sizeof(vars) / sizeof(DefaultGUIModel::variable_t);
 WaveformAnalyzer::WaveformAnalyzer(void)
   : DefaultGUIModel("WaveformAnalyzer with Custom GUI", ::vars, ::num_vars)
 {
-  setWhatsThis("<p><b>WaveformAnalyzer:</b><br>QWhatsThis description.</p>");
+  setWhatsThis("<p><b>WaveformAnalyzer:</b><br>Calculates onlive the duration, amplitude and slopes of the waveform</p>");
   DefaultGUIModel::createGUI(vars,
                              num_vars); // this is required to create the GUI
   customizeGUI();
@@ -85,8 +98,7 @@ WaveformAnalyzer::execute(void)
     double x1 = v_list[(vector_size + cycle) % vector_size];
     double x2 = v_list[(vector_size + cycle - n_p_slope) % vector_size];
     curr_slope = calculate_slope(x1, x2, n_p_slope * period);
-
-    
+  
 
     output(4) = curr_slope;
 

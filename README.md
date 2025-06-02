@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ###Plugin Template
 
 **Requirements:** None  
@@ -14,3 +15,6 @@ This is the plugin template, also known in previous versions as MyPluginGUI. It 
 
 ####States
 1. A State - An example state
+=======
+# waveform-analyzer-RTXI
+>>>>>>> d0db23e095b42f45138f6c9e1e631917097a2274

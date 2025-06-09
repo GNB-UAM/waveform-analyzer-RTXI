@@ -37,13 +37,46 @@ public:
   void createGUI(DefaultGUIModel::variable_t*, int);
   void customizeGUI(void);
 
+  double filter(std::vector<double> signal, int index, double v, int n_points);
+  double calculate_slope(double x1, double x2, double dt);
+  int get_mid_voltage_index_from_ref(int w_size, int ref);
+  double get_slope(int point, int n_p_slope);
+  int circular_distance(int from, int to, int buffer_size);
+
 protected:
   virtual void update(DefaultGUIModel::update_flags_t);
 
 private:
-  double some_parameter;
-  double some_state;
+  
   double period;
+
+  double th_spike;
+
+  bool got_spike;
+  int n_waveform;
+  int peak_idx;
+
+  //metrics
+  double duration;
+  double depol_slope;
+  double repol_slope;  
+  double amplitude;
+
+  // aux metrics
+  double duration_points;
+  double v_max;
+  double v_min;
+  int time_slope;
+
+  bool switch_th;
+  double wsize_time;
+  int n_points_filter;
+  int pre_mid_idx;
+
+  int vector_size;
+  int cycle;
+
+  std::vector<double> v_buffer;
 
   void initParameters();
 
@@ -51,6 +84,4 @@ private slots:
   // these are custom functions that can also be connected to events
   // through the Qt API. they must be implemented in plugin_template.cpp
 
-  void aBttn_event(void);
-  void bBttn_event(void);
 };

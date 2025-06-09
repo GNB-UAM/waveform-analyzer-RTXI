@@ -37,28 +37,30 @@ static DefaultGUIModel::variable_t vars[] = {
   {"Living neuron", "Signal input to analize", DefaultGUIModel::INPUT,},
 
   // PARAMETER
-  {"Firing threshold (V)", "Threshold to declare spike beggining", DefaultGUIModel::PARAMETER,},
-  {"Window time (ms)", "Time around peak to calculate duration", DefaultGUIModel::PARAMETER,},
-  {"N Points Filter", "Number of points for the filter", DefaultGUIModel::PARAMETER,},
+  {"Firing threshold (V)", "Threshold to declare spike beggining", DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,},
+  {"Window time (ms)", "Time around peak for the analysis (absolute window, not half)", DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,},
+  {"Slope (ms)", "Time around mid height points to calculate slope", DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,},
+  {"N Points Filter", "Number of points for the filter", DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,},
 
   //OUTPUT
   {"Filtered signal", "Filter", DefaultGUIModel::OUTPUT,},
-  {"Amplitude", "Calculated threshold", DefaultGUIModel::OUTPUT,},
-  {"Duration", "Calculated threshold", DefaultGUIModel::OUTPUT,},
-  {"Depol. slope", "Calculated threshold", DefaultGUIModel::OUTPUT,},
-  {"Repol. slope", "Calculated threshold", DefaultGUIModel::OUTPUT,},
+  {"Duration (ms)", "Duration", DefaultGUIModel::OUTPUT,},
+  {"Depol. slope", "Calculated depol", DefaultGUIModel::OUTPUT,},
+  {"Repol. slope", "Calculated repol", DefaultGUIModel::OUTPUT,},
+  {"Amplitude (V)", "Calculated amplitude", DefaultGUIModel::OUTPUT,},
+  {"Anaylis after peak", "After peak", DefaultGUIModel::OUTPUT,},
 
   //STATE
-  {"Amplitude", "Calculated threshold", DefaultGUIModel::STATE,},
-  {"Duration", "Calculated threshold", DefaultGUIModel::STATE,},
-  {"Depol. slope", "Calculated threshold", DefaultGUIModel::STATE,},
-  {"Repol. slope", "Calculated threshold", DefaultGUIModel::STATE,},
+  {"Duration (ms)", "Calculated duration (ms)", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
+  {"Depol. slope", "Calculated depol slope", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
+  {"Repol. slope", "Calculated repol slope", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
+  {"Amplitude (V)", "Calculated amplitude", DefaultGUIModel::STATE,},
 };
 
 static size_t num_vars = sizeof(vars) / sizeof(DefaultGUIModel::variable_t);
 
 WaveformAnalyzer::WaveformAnalyzer(void)
-  : DefaultGUIModel("WaveformAnalyzer with Custom GUI", ::vars, ::num_vars)
+  : DefaultGUIModel("WaveformAnalyzer", ::vars, ::num_vars)
 {
   setWhatsThis("<p><b>WaveformAnalyzer:</b><br>Calculates onlive the duration, amplitude and slopes of the waveform</p>");
   DefaultGUIModel::createGUI(vars,
@@ -76,104 +78,218 @@ WaveformAnalyzer::~WaveformAnalyzer(void)
 {
 }
 
+
+double
+WaveformAnalyzer::filter(std::vector<double> signal, int cycle, double v, int n_points)
+{
+  // No filter case
+  if (n_points == 0)
+    return v;
+
+  // Weighted average for each point and n previous
+  double fv = v*0.3;
+  double perc = 0.7/n_points;
+  int indx;
+  for (int i=1; i <= n_points; i++)
+  { 
+      indx = (vector_size + cycle - i) % vector_size;
+      fv +=  signal[indx]*perc;
+  }
+
+  return fv;
+}
+
+double
+WaveformAnalyzer::calculate_slope(double x1, double x2, double dt)
+{
+  return (x2-x1)/-dt;
+}
+
+
+double 
+WaveformAnalyzer::get_slope(int point, int n_p_slope)
+{
+  // Get slope
+  double x1 = v_buffer[(point - n_p_slope) % vector_size];
+  double x2 = v_buffer[(point) % vector_size];
+
+  return calculate_slope(x1, x2, n_p_slope*period);
+}
+
+// Retorna la distancia circular de idx1 a idx2 (hacia adelante)
+int WaveformAnalyzer::circular_distance(int from, int to, int buffer_size) {
+    return (to - from + buffer_size) % buffer_size;
+}
+
+int WaveformAnalyzer::get_mid_voltage_index_from_ref(int w_size, int ref)
+{
+  double min_val = v_buffer[ref];
+  double max_val = v_buffer[ref];
+  double values[w_size];
+  int real_indices[w_size];
+
+  // Single pass to:
+  // - store values and their actual buffer indices
+  // - find min and max values in the window
+  for (int i = 0; i < w_size; i++) {
+    int idx = (vector_size + ref - w_size + i) % vector_size;
+    double val = v_buffer[idx];
+    values[i] = val;
+    real_indices[i] = idx;
+    // TODO: change by previous maximum (the left is not the same point as right)
+    if (val < min_val) min_val = val;
+    if (val > max_val) max_val = val;
+  }
+
+  double midpoint = (min_val + max_val) / 2.0;
+
+  // Find the index closest to the midpoint value
+  // (could have been done in the previous loop, kept separate for clarity)
+  double min_diff = fabs(values[0] - midpoint);
+  int closest_idx = real_indices[0];
+
+  for (int i = 1; i < w_size; i++) {
+    double diff = fabs(values[i] - midpoint);
+    if (diff < min_diff) {
+      min_diff = diff;
+      closest_idx = real_indices[i];
+    }
+  }
+
+  return closest_idx;
+}
+
+
+
 void
 WaveformAnalyzer::execute(void)
 {
     double v = input(0);
     int w_size_points = wsize_time / period;
-    int allow_reset = 1;
+    int half_w = w_size_points / 2;
+    int n_p_slope = time_slope / period;
 
     /*SAVE NEW DATA*/
-    // v_list[cycle] = v;
+    // v_buffer[cycle] = v;
     // filter signal --> if n points filter > 0 v modified
-    double v_filtered = filter(v_list, cycle, v, n_points);
+    double v_filtered = filter(v_buffer, cycle, v, n_points_filter);
     //save filtered value
-    v_list[cycle] = v_filtered;
+    v_buffer[cycle] = v_filtered;
 
     output(0) = v_filtered;
 
-    // int n_p_slope = 15;
-
-    // Calculate slope 
-    double x1 = v_list[(vector_size + cycle) % vector_size];
-    double x2 = v_list[(vector_size + cycle - n_p_slope) % vector_size];
-    curr_slope = calculate_slope(x1, x2, n_p_slope * period);
-  
-
-    output(4) = curr_slope;
-
     // Spike detection
+    /*SPIKE DETECTED*/
+    if (!got_spike) // In the peak
+    {
+      /*OVER THE THRESHOLD*/
+      if (v > th_spike && !got_spike){
+        // Change of slope
+        if (v < v_buffer[cycle-3]){
+            got_spike = true;
+            n_waveform = half_w;
+            peak_idx = cycle;
+            //Init duration with the value on mid point of the units in the buffer// Guardamos los valores anteriores
+            pre_mid_idx = get_mid_voltage_index_from_ref(half_w, peak_idx); //Warning: for loop
+            // calculate depolarization slope
+            depol_slope = get_slope(pre_mid_idx, n_p_slope);
 
-    /*OVER THE THRESHOLD*/
-    if (v > th_spike && switch_th == true){
-      if (v < v_list[cycle-3]){
+            //Distance from peak to previous mid height spike
+            int mid_duration = circular_distance(pre_mid_idx, peak_idx, vector_size);
+            duration_points = mid_duration;
 
-        n_spikes++;
+            v_max = v_buffer[cycle-3];
 
-        /*SPIKE DETECTED*/
-        if (wsize_time < 0)
-        {
-          updatable = true;
-          // cycle --;
+            got_spike = true;
+
+            output(5) = 1;
+
         }
-
-        // Save threshold values for next spike
-
-        // Get threshold for V
-        switch_th = false;
-        th_calculated = v_list[(vector_size + cycle - wsize_points) % vector_size];
-        output(1) = th_calculated;
-
-        // Get slope
-        x1 = v_list[(vector_size + cycle - wsize_points ) % vector_size];
-        x2 = v_list[(vector_size + cycle - wsize_points -n_p_slope) % vector_size];
-      
-        sl_calculated = calculate_slope(x1, x2, n_p_slope*period);
-        output(2) = sl_calculated;
-
-        //Get threshold for sum 
-        th_sum_calculated = sum_list[(vector_size + cycle - wsize_points) % vector_size];
-        //Get threshold by mean of 3 last spikes. 
-        //TODO: define lim of buffer and size. (use more points ¿?)
-        th_sum_buff[n_spikes%10] = th_sum_calculated;
-        th_sum_calculated = (th_sum_calculated + th_sum_buff[(n_spikes%10)-1] + th_sum_buff[(n_spikes%10)-2])/3;
-
-
-        allow_reset = 1;
+        else
+          output(5) = 0;
       }
     }
-    
-    // Update states
-    if (updatable)
+    else //After peak
     {
-      // output(6) = sum <= th_sum_param; //Area threshold crossed
-      output(6) = sum < th_sum_calculated; //Area threshold crossed
-      output(7) = v > th_calculated; //Voltage threshold crossed
-      output(8) = curr_slope > sl_calculated; //Current threshold crossed
-    }
-    else
-    {
-      output(6) = 0;
-      output(7) = 0;
-      output(8) = 0;
-    }
+      if (n_waveform < w_size_points){ //in window analysis
+        n_waveform++;
 
-    
+        if (v < v_min)
+          v_min = v;
+        
+        output(5) = 1;
+      }
+      else if (n_waveform >= w_size_points) //end of analysis
+      {
+        int post_mid_idx = get_mid_voltage_index_from_ref(half_w, cycle);
+        
+        // calculate repolarization slope
+        repol_slope = get_slope(post_mid_idx + n_p_slope, n_p_slope);
+
+        //Distance from peak to previous mid height spike
+        int mid_duration2 = circular_distance(post_mid_idx, cycle, vector_size);
+        
+        duration_points += mid_duration2;
+        duration = duration_points * period;
+        
+        amplitude = v_max - v_min;
+
+        // Metrics to outputs
+        output(1) = duration;
+        output(2) = depol_slope;
+        output(3) = repol_slope;
+        output(4) = amplitude;
+
+        //reset condition until next spike
+        got_spike = false;
+
+        //reset vmax/vmin
+        v_max = -10000;
+        v_min = 10000;
+
+        output(5) = 0;
+      }
+    }
+   
     /*NEXT CYCLE*/
     cycle++;
     if (vector_size == cycle){
       cycle = 0;
     }
 
-    
     return;
 }
 
 void
 WaveformAnalyzer::initParameters(void)
 {
-  some_parameter = 0;
-  some_state = 0;
+  //TODO fix for other period times
+  vector_size = 10*4000; // 10 reads per ms * 100 ms buffer
+  // vector_size = 100 /  RT::System::getInstance()->getPeriod() * 1e-6; // 0.1 ms per read * 100 ms buffer
+  cycle = 0;
+  v_buffer.resize(vector_size, 0);
+  
+  th_spike = -10;
+  got_spike = false;
+  n_waveform = 0;
+  
+  wsize_time = 100; //ms
+
+  duration = 0;
+  depol_slope = 0;
+  repol_slope = 0;    
+  amplitude = 0;
+
+  duration_points = 0;
+  v_max = -1000;
+  v_min = 1000;
+
+  time_slope = 2; //2 ms by default
+
+
+  th_spike = 0;
+  n_points_filter = 0;
+
 }
 
 void
@@ -182,12 +298,27 @@ WaveformAnalyzer::update(DefaultGUIModel::update_flags_t flag)
   switch (flag) {
     case INIT:
       period = RT::System::getInstance()->getPeriod() * 1e-6; // ms
-      setParameter("GUI label", some_parameter);
-      setState("A State", some_state);
+      setParameter("Firing threshold (V)", th_spike);
+      setParameter("Window time (ms)", wsize_time);
+      setParameter("Slope (ms)", time_slope);
+      setParameter("N Points Filter", n_points_filter);
+
+      setState("Duration (ms)", duration);
+      setState("Depol. slope", depol_slope);
+      setState("Repol. slope", repol_slope);
+      setState("Amplitude (V)", amplitude);
+
       break;
 
     case MODIFY:
-      some_parameter = getParameter("GUI label").toDouble();
+      th_spike = getParameter("Firing threshold (V)").toDouble();
+      wsize_time = getParameter("Window time (ms)").toDouble();
+      if (wsize_time > vector_size)
+        wsize_time = vector_size - 1;
+
+      n_points_filter = getParameter("N Points Filter").toInt();
+      time_slope = getParameter("Slope (ms)").toDouble();
+      
       break;
 
     case UNPAUSE:
@@ -208,30 +339,5 @@ WaveformAnalyzer::update(DefaultGUIModel::update_flags_t flag)
 void
 WaveformAnalyzer::customizeGUI(void)
 {
-  QGridLayout* customlayout = DefaultGUIModel::getLayout();
-
-  QGroupBox* button_group = new QGroupBox;
-
-  QPushButton* abutton = new QPushButton("Button A");
-  QPushButton* bbutton = new QPushButton("Button B");
-  QHBoxLayout* button_layout = new QHBoxLayout;
-  button_group->setLayout(button_layout);
-  button_layout->addWidget(abutton);
-  button_layout->addWidget(bbutton);
-  QObject::connect(abutton, SIGNAL(clicked()), this, SLOT(aBttn_event()));
-  QObject::connect(bbutton, SIGNAL(clicked()), this, SLOT(bBttn_event()));
-
-  customlayout->addWidget(button_group, 0, 0);
-  setLayout(customlayout);
 }
 
-// functions designated as Qt slots are implemented as regular C++ functions
-void
-WaveformAnalyzer::aBttn_event(void)
-{
-}
-
-void
-WaveformAnalyzer::bBttn_event(void)
-{
-}

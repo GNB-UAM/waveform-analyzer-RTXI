@@ -34,7 +34,7 @@ createRTXIPlugin(void)
 
 static DefaultGUIModel::variable_t vars[] = {
   // INPUT
-  {"Living neuron", "Signal input to analize", DefaultGUIModel::INPUT,},
+  {"Living neuron", "Signal input to analize (V)", DefaultGUIModel::INPUT,},
 
   // PARAMETER
   {"Firing threshold (V)", "Threshold to declare spike beggining", DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,},
@@ -43,18 +43,25 @@ static DefaultGUIModel::variable_t vars[] = {
   {"N Points Filter", "Number of points for the filter", DefaultGUIModel::PARAMETER | DefaultGUIModel::DOUBLE,},
 
   //OUTPUT
-  {"Filtered signal", "Filter", DefaultGUIModel::OUTPUT,},
-  {"Duration (ms)", "Duration", DefaultGUIModel::OUTPUT,},
-  {"Depol. slope", "Calculated depol", DefaultGUIModel::OUTPUT,},
-  {"Repol. slope", "Calculated repol", DefaultGUIModel::OUTPUT,},
-  {"Amplitude (V)", "Calculated amplitude", DefaultGUIModel::OUTPUT,},
-  {"Anaylis after peak", "After peak", DefaultGUIModel::OUTPUT,},
+  {"Filtered signal output", "Filter", DefaultGUIModel::OUTPUT,},
+  {"Duration (ms) output", "Duration", DefaultGUIModel::OUTPUT,},
+  {"Depol. slope output", "Calculated depol", DefaultGUIModel::OUTPUT,},
+  {"Repol. slope output", "Calculated repol", DefaultGUIModel::OUTPUT,},
+  {"Amplitude (V) output", "Calculated amplitude", DefaultGUIModel::OUTPUT,},
+  {"Anaylis after peak output", "After peak", DefaultGUIModel::OUTPUT,},
+  {"Min (V) output", "Minimun voltage in window", DefaultGUIModel::OUTPUT},
+  {"Max (V) output", "Maximun voltage in window", DefaultGUIModel::OUTPUT},
+
+  {"Mid point", "Minimun voltage in window", DefaultGUIModel::OUTPUT},
+  {"Mid point 2", "Maximun voltage in window", DefaultGUIModel::OUTPUT},
 
   //STATE
   {"Duration (ms)", "Calculated duration (ms)", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
   {"Depol. slope", "Calculated depol slope", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
   {"Repol. slope", "Calculated repol slope", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
-  {"Amplitude (V)", "Calculated amplitude", DefaultGUIModel::STATE,},
+  {"Amplitude (V)", "Calculated amplitude", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
+  {"Min (V)", "Minimun voltage in window", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
+  {"Max (V)", "Maximun voltage in window", DefaultGUIModel::STATE | DefaultGUIModel::DOUBLE,},
 };
 
 static size_t num_vars = sizeof(vars) / sizeof(DefaultGUIModel::variable_t);
@@ -203,7 +210,6 @@ WaveformAnalyzer::execute(void)
             got_spike = true;
 
             output(5) = 1;
-
         }
         else
           output(5) = 0;
@@ -239,6 +245,8 @@ WaveformAnalyzer::execute(void)
         output(2) = depol_slope;
         output(3) = repol_slope;
         output(4) = amplitude;
+        output(6) = v_min;
+        output(7) = v_max;
 
         //reset condition until next spike
         got_spike = false;
@@ -307,6 +315,8 @@ WaveformAnalyzer::update(DefaultGUIModel::update_flags_t flag)
       setState("Depol. slope", depol_slope);
       setState("Repol. slope", repol_slope);
       setState("Amplitude (V)", amplitude);
+      setState("Min (V)", v_min);
+      setState("Max (V)", v_max);
 
       break;
 
